@@ -43,9 +43,9 @@ function get_segments(dataset, time)
 				processed_file["electrode_"*string(i-1)*"/data"] = signal[1:resampling_rate*time]
 			end
 		end
-
-		println("Done.")
 	end
+	
+	println("Done.")
 end
 
 function normalize_signals(dataset)
@@ -67,9 +67,9 @@ function normalize_signals(dataset)
 			normalized_signal = (signal .- u) ./ s
 			processed_file["electrode_"*string(i-1)*"/normalized/data"] = normalized_signal
 		end
-
-		println("Done.")
 	end
+
+	println("Done.")
 end
 
 function get_mean_signal(dataset, time)
@@ -89,9 +89,9 @@ function get_mean_signal(dataset, time)
 		end
 		mean_signal = mean_signal ./ 252
 		processed_file["mean_signal/data"] = mean_signal
-
-		println("Done.")
 	end
+
+	println("Done.")
 end
 
 function compute_entropy_curve(dataset, type, m, r, scales)
@@ -106,26 +106,6 @@ function compute_entropy_curve(dataset, type, m, r, scales)
 		println("Computing "*type*" curve with r = "*string(r)*"...")
 
 		h5open("./processed_data/"*dataset*"_checkerboard_processed.h5", "r") do processed_file
-
-			#=
-			for i in 1:252
-				println("Processing electrode_"*string(i-1)*"...")
-				signal = read(processed_file, "electrode_"*string(i-1)*"/data")
-				# compute entropy curve
-				if type == "MSE"
-					entropy_curve = multiscale_entropy(signal, m, r*std(signal), "sample", scales)
-				elseif type == "RCMSE"
-					entropy_curve = refined_composite_multiscale_entropy(signal, m, r*std(signal), "sample", scales)
-				elseif type == "FMSE"
-					entropy_curve = multiscale_entropy(signal, m, r*std(signal), "fuzzy", scales)
-				elseif type == "FRCMSE"
-					entropy_curve = refined_composite_multiscale_entropy(signal, m, r*std(signal), "fuzzy", scales)
-				end
-				entropy_file[type*"/"*string(r)*"/electrode_"*string(i-1)*"/curve"] = entropy_curve
-				entropy_file[type*"/"*string(r)*"/electrode_"*string(i-1)*"/nAUC"] = compute_nAUC(entropy_curve)
-				entropy_file[type*"/"*string(r)*"/electrode_"*string(i-1)*"/LRS"] = compute_LRS(entropy_curve, scales)
-			end
-			=#
 
 			println("Processing mean signal...")
 			signal = read(processed_file, "mean_signal/data")
@@ -143,7 +123,7 @@ function compute_entropy_curve(dataset, type, m, r, scales)
 			entropy_file[type*"/"*string(r)*"/mean_signal/nAUC"] = compute_nAUC(entropy_curve)
 			entropy_file[type*"/"*string(r)*"/mean_signal/LRS"] = compute_LRS(entropy_curve, scales)
 		end
-
-		println("Done.")
 	end
+
+	println("Done.")
 end
