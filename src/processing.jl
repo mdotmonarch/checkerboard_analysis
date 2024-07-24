@@ -5,9 +5,7 @@ include("entropy.jl")
 
 using HDF5
 using DSP
-using JSON
 using Statistics
-using Plots
 
 # parameters
 sampling_rate = 20000

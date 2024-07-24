@@ -2,8 +2,6 @@
 # @author: max (max@mdotmonar.ch)
 
 using HDF5
-using Plots
-using StatsPlots
 
 include("preprocessing.jl")
 include("processing.jl")
