@@ -4,7 +4,6 @@
 using HDF5
 using DSP
 using Statistics
-using Plots
 using CurveFit
 
 # parameters
