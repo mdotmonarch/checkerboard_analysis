@@ -16,6 +16,13 @@ filter = Dict(
 )
 resampling_rate = 250 # Hz
 
+r_list = [0.2]
+e_f_list = ["none", "snr_0", "snr_1", "snr_2", "snr_3", "snr_4", "snr_5", "snr_6", "snr_7"]
+
+# divide the datasets into N chunks
+N = 8
+i = parse(Int, ARGS[1])
+
 datasets = [
 	# XBP1s 6m male
 	"MR-0599_nd4",
@@ -127,31 +134,63 @@ datasets = [
 	"MR-0297",
 ]
 
-println("Dataset length: ", length(datasets))
+for electrode_filter in e_f_list
 
-for dataset in datasets
-	println("Processing dataset: ", dataset)
+	println("Processing datasets with electrode filter: ", electrode_filter)
 
-	# preprocessing
-	# filter_and_resample(dataset, filter, resampling_rate)
+	f_datasets = datasets
 
-	# processing
-	# get_segments(dataset, 35)
-	# normalize_signals(dataset)
-	# get_mean_signal(dataset, 35)
+	if electrode_filter != "none"
+		f_datasets = []
+		for dataset in datasets
+			#check if snr file exists
+			if !isfile("../SNR/"*dataset*"_SNR.h5")
+				println("SNR file not found for dataset: ", dataset)
+				continue
+			end
+			snr_file = h5open("../SNR/"*dataset*"_SNR.h5", "r")
+			threshold = parse(Float64, electrode_filter[5:end])
+			at_least_one = false
+			for i in 1:252
+				if read(snr_file, "electrode_"*string(i-1)*"/SNR") >= threshold
+					push!(f_datasets, dataset)
+					break
+				end
+			end
+		end
+	else 
+		f_datasets = datasets
+	end
 
-	# entropy and complexity
-	compute_entropy_curve(dataset, "RCMSE", 2, 0.1, [i for i in 1:45])
-	compute_entropy_curve(dataset, "RCMSE", 2, 0.2, [i for i in 1:45])
-	compute_entropy_curve(dataset, "RCMSE", 2, 0.3, [i for i in 1:45])
-	compute_entropy_curve(dataset, "RCMSE", 2, 0.4, [i for i in 1:45])
-	compute_entropy_curve(dataset, "RCMSE", 2, 0.5, [i for i in 1:45])
+	println("Dataset length: ", length(f_datasets))
+
+	# split according to N cores
+	f_datasets = f_datasets[i:N:end]
+
+	#=
+	## PREPROCESSING
+	for dataset in f_datasets
+		println("Preprocessing dataset: ", dataset)
+		filter_and_resample(dataset, filter, resampling_rate)
+	end
+	=#
+
+	## PROCESSING
+	for dataset in f_datasets
+		println("Processing dataset: ", dataset)
+		get_segments(dataset, 35)
+		normalize_signals(dataset)
+		get_electrode_mean(dataset, 35, electrode_filter)
+	end
+
+	## ENTROPY
+	for dataset in f_datasets
+		println("Computing entropy and complexity for dataset: ", dataset)
+		for r in r_list
+			compute_entropy_curve(dataset, electrode_filter, "RCMSE", 2, r, [i for i in 1:45])
+		end
+	end
+
 end
-
-# plots
-include("plots.jl")
-
-# analysis
-include("analysis.jl")
 
 println("Pipeline complete.")
