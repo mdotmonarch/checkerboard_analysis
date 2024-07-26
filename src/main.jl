@@ -15,7 +15,17 @@ filter = Dict(
 resampling_rate = 250 # Hz
 
 r_list = [0.2]
-e_f_list = ["none", "snr_0", "snr_1", "snr_2", "snr_3", "snr_4", "snr_5", "snr_6", "snr_7"]
+e_f_list = [
+	"none",
+	"snr_0",
+	"snr_1",
+	"snr_2",
+	"snr_3",
+	"snr_4",
+	"snr_5",
+	"snr_6",
+	"snr_7"
+]
 
 # divide the datasets into N chunks
 N = 8
