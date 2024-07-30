@@ -93,18 +93,17 @@ function get_electrode_mean(dataset, time, electrode_filter="none") #filters: no
 			# add SNR filter based on SNR h5 file
 			snr_file = h5open("../SNR/"*dataset*"_SNR.h5", "r")
 
-			filtered_electrodes = []
+			electrode_number = 0
 
 			for i in 1:252
 				if read(snr_file, "electrode_"*string(i-1)*"/SNR") >= threshold
-					push!(filtered_electrodes, "electrode_"*string(i-1))
+					electrode_number += 1
 					mean_signal += read(processed_file, "electrode_"*string(i-1)*"/normalized/data")
 				end
 			end
 
-			mean_signal = mean_signal ./ length(filtered_electrodes)
+			mean_signal = mean_signal ./ electrode_number
 			processed_file["electrode_mean/"*electrode_filter*"/data"] = mean_signal
-			processed_file["electrode_mean/"*electrode_filter*"/meta/filtered_electrodes"] = filtered_electrodes
 		end
 	end
 
