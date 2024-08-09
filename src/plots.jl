@@ -5,7 +5,6 @@ using HDF5
 using Plots
 using StatsPlots
 using DSP
-using HypothesisTests
 
 include("processing.jl")
 include("entropy.jl")
@@ -177,17 +176,92 @@ v_ls_index["G"] = :dash
 v_ls_index["H"] = :dashdot
 
 t_list = ["RCMSE"]
-r_list = ["0.1", "0.2", "0.3", "0.4", "0.5"]
+r_list = ["0.2"]
+e_f_list = [
+	"none",
+	"snr_0",
+	"snr_1",
+	"snr_2",
+	"snr_3",
+	"snr_4",
+	"snr_5",
+	"snr_6",
+	"snr_7"
+]
+
+# Signal and spectrogram
+function plot_signal(signal, fs=250)
+	plot!([i/fs for i in 1:length(signal)], signal, xlabel="Time (s)", ylabel="Amplitude")
+end
+
+function plot_spectrogram(signal, fs=250)
+	nw = length(signal) ÷ 30
+	spec = spectrogram(signal, nw, nw÷2, fs=fs, window=hanning)
+	heatmap!(spec.time, spec.freq, 10*log.(spec.power), c=:viridis, xlabel="Time (s)", ylabel="Frequency (Hz)")
+end
+
+for dataset in datasets
+	if !isdir("./plots")
+		mkdir("./plots")
+	end
+	if !isdir("./plots/$(dataset)")
+		mkdir("./plots/$(dataset)")
+	end
+	if !isdir("./plots/$(dataset)/signals")
+		mkdir("./plots/$(dataset)/signals")
+	end
+	if !isdir("./plots/$(dataset)/signals/electrodes")
+		mkdir("./plots/$(dataset)/signals/electrodes")
+	end
+
+	### open processed file
+	processed_file = h5open("./processed_data/$(dataset)_checkerboard_processed.h5", "r")
+
+	### plot signal and spectrogram for each electrode
+	#=
+	for n in 1:252
+		signal = read(processed_file, "electrode_$(n-1)/normalized/data")
+
+		p1 = plot(title="Normalized signal and spectrogram of $(dataset), electrode $(n-1)", legend=:none)
+		plot_signal(signal)
+
+		p2 = plot()
+		plot_spectrogram(signal)
+
+		plot(p1, p2, layout=grid(2, 1, heights=[0.2 ,0.8]), size=(800, 900), dpi=300)
+		savefig("./plots/$(dataset)/signals/electrodes/electrode_$(n-1).png")
+	end
+	=#
+
+	### plot signal and spectrogram for electrode mean
+	e_f_computed = keys(processed_file["electrode_mean"])
+
+	for e_f in e_f_computed
+		signal = read(processed_file, "electrode_mean/$(e_f)/data")
+
+		p1 = plot(title="Normalized signal and spectrogram of $(dataset), \nelectrode mean w/ electrode filter: $(e_f)", legend=:none)
+		plot_signal(signal)
+
+		p2 = plot()
+		plot_spectrogram(signal)
+
+		plot(p1, p2, layout=grid(2, 1, heights=[0.2 ,0.8]), size=(800, 900), dpi=300)
+		savefig("./plots/$(dataset)/signals/electrode_mean_$(e_f).png")
+	end
+
+	### close processed file
+	close(processed_file)
+end
 
 # load entropy data
 entropy_data = Dict()
 
-for d in datasets
-	entropy_data[d] = Dict()
+for dataset in datasets
+	entropy_data[dataset] = Dict()
 	for t in t_list
-		entropy_data[d][t] = Dict()
+		entropy_data[dataset][t] = Dict()
 		for r in r_list
-			entropy_data[d][t][r] = Dict()
+			entropy_data[dataset][t][r] = Dict()
 		end
 	end
 end
@@ -197,95 +271,117 @@ for dataset in datasets
 
 	for type in t_list
 		for r in r_list
-			entropy = read(file["/$(type)/$(r)/mean_signal"])
-			entropy_data[dataset][type][r]["curve"] = entropy["curve"]
-			entropy_data[dataset][type][r]["nAUC"] = entropy["nAUC"]
-			entropy_data[dataset][type][r]["LRS"] = entropy["LRS"]
+			entropy = read(file["/$(type)/$(r)/electrode_mean"])
+			for e_f in keys(entropy)
+				entropy_data[dataset][type][r][e_f] = Dict()
+				entropy_data[dataset][type][r][e_f]["curve"] = entropy[e_f]["curve"]
+				entropy_data[dataset][type][r][e_f]["LRS_all"] = compute_LRS(entropy[e_f]["curve"], [i for i in 1:45])
+				entropy_data[dataset][type][r][e_f]["LRS_15"] = compute_LRS(entropy[e_f]["curve"][1:15], [i for i in 1:15])
+				entropy_data[dataset][type][r][e_f]["LRS_30"] = compute_LRS(entropy[e_f]["curve"][16:30], [i for i in 16:30])
+				entropy_data[dataset][type][r][e_f]["LRS_45"] = compute_LRS(entropy[e_f]["curve"][31:45], [i for i in 31:45])
+				entropy_data[dataset][type][r][e_f]["nAUC_all"] = compute_nAUC(entropy[e_f]["curve"])
+				entropy_data[dataset][type][r][e_f]["nAUC_15"] = compute_nAUC(entropy[e_f]["curve"][1:15])
+				entropy_data[dataset][type][r][e_f]["nAUC_30"] = compute_nAUC(entropy[e_f]["curve"][16:30])
+				entropy_data[dataset][type][r][e_f]["nAUC_45"] = compute_nAUC(entropy[e_f]["curve"][31:45])
+			end
 		end
 	end
 
 	close(file)
 end
 
-# plots
-if !isdir("./plots")
-	mkdir("./plots")
+### plot SNR comparison
+for dataset in datasets
+	for t in t_list
+		for r in r_list
+			if !isdir("./plots/$(dataset)/entropy")
+				mkdir("./plots/$(dataset)/entropy")
+			end
+			global l = @layout [a
+				[grid(1,4)]
+				[grid(1,4)]
+			]
+			p1 = plot(xlims=(1, 45))
+			plot!(xlabel="Scale", ylabel="SampEn")
+			plot!(title="RCMSE curves of $(dataset)\ncomparison of electrode filters")
+			vspan!([1, 15], color=:black, alpha=0.1, label=:none)
+			vspan!([16, 30], color=:black, alpha=0.1, label=:none)
+			vspan!([31, 45], color=:black, alpha=0.1, label=:none)
+			for e_f in ["none", "snr_3", "snr_7"]
+				if !haskey(entropy_data[dataset][t][r], e_f)
+					continue
+				end
+				entropy_curve = entropy_data[dataset][t][r][e_f]["curve"]
+				scales = [i for i in 1:45]
+				plot!(scales, entropy_curve, label=e_f)
+			end
+			# LRS
+			p2 = []
+			for (segment, lim) in zip(["all", "15", "30", "45"], ["1:45", "1:15", "16:30", "31:45"])
+				p = plot(framestyle = :origin, xlims=(-1, 1), grid=false, xaxis=false, title="LRS "*lim)
+				for e_f in ["none", "snr_3", "snr_7"]
+					if !haskey(entropy_data[dataset][t][r], e_f)
+						continue
+					end
+					lrs = entropy_data[dataset][t][r][e_f]["LRS_"*segment]
+					scatter!([0], [lrs], label=e_f, ms=5, markerstrokewidth=0)
+				end
+				p2 = [p2; p]
+			end
+			# nAUC
+			p3 = []
+			for (segment, lim) in zip(["all", "15", "30", "45"], ["1:45", "1:15", "16:30", "31:45"])
+				p = plot(framestyle = :origin, xlims=(-1, 1), grid=false, xaxis=false, title="nAUC "*lim)
+				for e_f in ["none", "snr_3", "snr_7"]
+					if !haskey(entropy_data[dataset][t][r], e_f)
+						continue
+					end
+					nauc = entropy_data[dataset][t][r][e_f]["nAUC_"*segment]
+					scatter!([0], [nauc], label=e_f, ms=5, markerstrokewidth=0)
+				end
+				p3 = [p3; p]
+			end
+			plot(p1, p2..., p3..., layout=l, size=(900, 900), dpi=300)
+			savefig("./plots/$(dataset)/entropy/$(t)_$(r)_comparison.png")
+		end
+	end
 end
 
 for type in t_list
 	for r in r_list
-		# check if directory exists
 		if !isdir("./plots/$(type)_$(r)")
 			mkdir("./plots/$(type)_$(r)")
 		end
+		for (segment, lim) in zip(["all", "15", "30", "45"], ["1-45", "1-15", "16-30", "31-45"])
+			for e_f in ["none", "snr_3", "snr_7"]
+				# LRS distribution
+				local grouped_lrs = Dict()
+				for group in groups
+					grouped_lrs[group] = Float64[]
+				end
+				for group in groups
+					for dataset in grouped_datasets[group]
+						if !haskey(entropy_data[dataset][type][r], e_f)
+							continue
+						end
+						push!(grouped_lrs[group], entropy_data[dataset][type][r][e_f]["LRS_"*segment])
+					end
+				end
+				plot(size=(1000, 600), dpi=300, legend=:none)
+				a_data = [grouped_lrs[group] for group in groups]
 
-		# entropy curves per group, with average curve
-		for g in groups
-			plot(xlims=(1, 45), ylims=(0, 2.25), size=(800, 600), legend=:topright)
-			plot!(xlabel="Scale", ylabel="Sample Entropy")
-			plot!(title=" $(type) $(r)")
+				violin_labels = [group_labels[group]*" ($(length(grouped_lrs[group])))" for group in groups]
+				violin_labels = reshape(violin_labels, 1, length(violin_labels))
 
-			avg_entropy_curve = zeros(45)
-			for d in grouped_datasets[g]
-				avg_entropy_curve += entropy_data[d][type][r]["curve"]
-				plot!(1:45, entropy_data[d][type][r]["curve"], color=:black, lw=1, alpha=0.2, label=:none)
-			end
-			avg_entropy_curve /= length(grouped_datasets[g])
-			plot!(1:45, avg_entropy_curve, color=v_color_index[g], lw=2, ls=v_ls_index[g], label=group_labels[g])
-			savefig("./plots/$(type)_$(r)/entropy_curves_$(replace(group_labels[g], " " => "_")).png")
-		end
+				violin!(violin_labels, a_data, label=violin_labels, color = v_color, fill = v_fill, ls=v_ls)
+				dotplot!(violin_labels, a_data, label=false, line = 0, marker=:black, side=:left, mode=:none, alpha=0.3)
+				plot!(xlabel="Group", ylabel="LRS", title="LRS distribution of $(type) $(r) $(lim), electrode filter: $(e_f)")
 
-		# average entropy curves of all groups
-		plot(xlims=(1, 45), ylims=(0, 2.25), size=(800, 600), legend=:topright)
-		plot!(xlabel="Scale", ylabel="Sample Entropy")
-		plot!(title=" $(type) $(r)")
-		for g in groups
-			avg_entropy_curve = zeros(45)
-			for d in grouped_datasets[g]
-				avg_entropy_curve += entropy_data[d][type][r]["curve"]
-			end
-			avg_entropy_curve /= length(grouped_datasets[g])
-			plot!(1:45, avg_entropy_curve, color=v_color_index[g], lw=2, ls=v_ls_index[g], label=group_labels[g])
-		end
-		savefig("./plots/$(type)_$(r)/average_entropy_curves.png")
+				println("subject count:", length([(a_data...)...]) )
 
-		# LRS distribution
-		local grouped_lrs = Dict()
-		for g in groups
-			grouped_lrs[g] = Float64[]
-		end
-		for g in groups
-			for d in grouped_datasets[g]
-				push!(grouped_lrs[g], entropy_data[d][type][r]["LRS"])
+				savefig("./plots/$(type)_$(r)/LRS_distribution_$(e_f)_$(lim).png")
 			end
 		end
-		plot(ylims=(-0.025, 0.025), size=(800, 600), legend=:none)
-		a_data = [grouped_lrs[g] for g in groups]
-
-		violin!(group_labels_plot, a_data, label=group_labels_plot, color = v_color, fill = v_fill, ls=v_ls)
-		dotplot!(group_labels_plot, a_data, label=false, line = 0, marker=:black, side=:left, mode=:none)
-		plot!(xlabel="Group", ylabel="LRS")
-
-		savefig("./plots/$(type)_$(r)/lrs_distribution.png")
-
-		# nAUC distribution
-		local grouped_nauc = Dict()
-		for g in groups
-			grouped_nauc[g] = Float64[]
-		end
-		for g in groups
-			for d in grouped_datasets[g]
-				push!(grouped_nauc[g], entropy_data[d][type][r]["nAUC"])
-			end
-		end
-		plot(ylims=(0, 2.0), size=(800, 600), legend=:none)
-		a_data = [grouped_nauc[g] for g in groups]
-
-		violin!(group_labels_plot, a_data, label=group_labels_plot, color = v_color, fill = v_fill, ls=v_ls)
-		dotplot!(group_labels_plot, a_data, label=false, line = 0, marker=:black, side=:left, mode=:none)
-		plot!(xlabel="Group", ylabel="nAUC")
-
-		savefig("./plots/$(type)_$(r)/nauc_distribution.png")
 	end
 end
 
